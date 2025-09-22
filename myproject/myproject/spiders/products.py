@@ -1,4 +1,6 @@
 import scrapy
+import json
+import re
 
 
 class ProductsSpider(scrapy.Spider):
@@ -28,11 +30,24 @@ class ProductsSpider(scrapy.Spider):
             yield scrapy.Request(
                 url=response.urljoin(next_page),
                 callback=self.parse_category,
-
             )
 
     def parse_product(self, response):
         stock_info = response.css("div.product-info-stock-sku")
+
+        raw_json = response.xpath('//script[contains(text(), "jsonSwatchConfig")]/text()').get()
+        sizes = []
+        if raw_json:
+            match = re.search(r'"jsonSwatchConfig":(\{.*?\})\s*,\s*"mediaCallback"', raw_json, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(1))
+                    for key, value in data.items():
+                        for item in value.values():
+                            if isinstance(item, dict) and "value" in item:
+                                sizes.append(item["value"])
+                except Exception as e:
+                    self.logger.error(f"Size extract error: {e}")
 
         yield {
             "Title": response.css("span.base::text").get(),
@@ -40,5 +55,6 @@ class ProductsSpider(scrapy.Spider):
             "SKU#": stock_info.css("div.product.attribute.sku div.value::text").get(),
             "Article-Code": stock_info.css("div.product.attribute.sku.article-code span::text").get(),
             "Availability": stock_info.css("div.stock.available span::text").get(),
+            "Sizes": sizes,
             "URL": response.url
         }
